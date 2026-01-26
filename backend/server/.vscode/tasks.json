@@ -1,0 +1,25 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Compile Java Server",
+			"type": "shell",
+			"command": "javac -d bin src/*.java",
+			"args": [],
+			"problemMatcher": [
+				"$javac"
+			],
+			"group": "build"
+		},
+		{
+			"label": "Compile Java Server",
+			"type": "shell",
+			"command": "javac -d bin src/*.java",
+			"args": [],
+			"problemMatcher": [
+				"$javac"
+			],
+			"group": "build"
+		}
+	]
+}

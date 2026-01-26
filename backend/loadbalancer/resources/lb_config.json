@@ -1,0 +1,7 @@
+{
+  "servers": [
+    {"ip": "127.0.0.1", "port": 2121},
+    {"ip": "127.0.0.1", "port": 2122}
+  ],
+  "max_clients_per_server": 2
+}
