@@ -62,6 +62,9 @@ public class ClientThread implements Runnable {
                 else if (line.equals("LIST")) {
                     handleList(writer);
                 }
+                else if (line.equals("QUOTA")) {
+                    handleQuota(writer);
+                }
                 else {
                     writer.println("ERROR Unknown command");
                 }
@@ -200,5 +203,18 @@ public class ClientThread implements Runnable {
             }
         }
         writer.println("END");
+    }
+
+    /**
+     * Gère la commande QUOTA - Retourne le quota restant de l'utilisateur
+     */
+    private void handleQuota(PrintWriter writer) {
+        Long quota = fileManager.getQuota(username);
+        if (quota == null) {
+            writer.println("ERROR No quota found for user");
+            return;
+        }
+        writer.println(quota);
+        System.out.println("[QUOTA] " + username + " → " + quota + " octets restants");
     }
 }

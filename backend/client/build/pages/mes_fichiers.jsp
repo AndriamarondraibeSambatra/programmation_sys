@@ -1,10 +1,14 @@
 <%@ page import="model.User" %>
+<%@ page import="java.util.List" %>
+<%@ page import="java.util.ArrayList" %>
 <%
     User user = (User) session.getAttribute("user");
     if (user == null) {
         response.sendRedirect(request.getContextPath() + "/pages/home.jsp");
         return;
     }
+    List<String> list_file = (ArrayList<String>) request.getAttribute("list_file");
+    
 %>
 <!DOCTYPE html>
 <html lang="fr">
@@ -327,42 +331,15 @@
 
     <div class="container-fluid">
         <div class="row">
-            <!-- Sidebar for md+ -->
-            <aside class="col-12 col-md-3 col-lg-2 sidebar d-none d-md-block p-3">
-                <div class="user-info mb-4">
-                    <div class="fw-bold">Bonjour, <%= user.getNom() %></div>
-                    <div class="user-email"><%= user.getNom() %>@example.com</div>
-                </div>
-                <nav class="nav flex-column">
-                    <a class="nav-link active" href="#"><i class="bi bi-house-door-fill"></i>Accueil</a>
-                    <a class="nav-link" href="#"><i class="bi bi-folder-fill"></i>Mes fichiers</a>
-                    <a class="nav-link" href="#"><i class="bi bi-share-fill"></i>Partages</a>
-                    <a class="nav-link" href="#"><i class="bi bi-gear-fill"></i>Parametres</a>
-                </nav>
-            </aside>
-
-            <!-- Offcanvas sidebar for small screens -->
-            <div class="offcanvas offcanvas-start" tabindex="-1" id="offcanvasSidebar">
-                <div class="offcanvas-header">
-                    <h5 class="offcanvas-title">SmartDrive</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="offcanvas"></button>
-                </div>
-                <div class="offcanvas-body">
-                    <nav class="nav flex-column">
-                        <a class="nav-link" href="#"><i class="bi bi-house-door-fill me-2"></i>Accueil</a>
-                        <a class="nav-link" href="#"><i class="bi bi-folder-fill me-2"></i>Mes fichiers</a>
-                        <a class="nav-link" href="#"><i class="bi bi-share-fill me-2"></i>Partages</a>
-                        <a class="nav-link" href="#"><i class="bi bi-gear-fill me-2"></i>Parametres</a>
-                    </nav>
-                </div>
-            </div>
+            <!-- Import du sidebar réutilisable -->
+            <jsp:include page="sidebar.jsp" />
 
             <!-- Main content -->
             <main class="col-12 col-md-9 col-lg-10 p-4">
                 <div class="d-flex justify-content-between align-items-center mb-4">
                     <h3 class="mb-0 text-primary">Mes fichiers</h3>
                     <div class="d-flex gap-2 align-items-center">
-                        <form action="upload" method="post" enctype="multipart/form-data" class="m-0">
+                        <form action="<%= request.getContextPath() %>/upload" method="post" enctype="multipart/form-data" class="m-0">
                             <label class="btn btn-primary btn-sm mb-0">
                                 <i class="bi bi-upload me-1"></i>Upload
                                 <input type="file" name="file" hidden onchange="this.form.submit()">
@@ -374,41 +351,122 @@
                 <!-- Simple responsive grid -->
                 <section>
                     <div class="row g-3">
-                        <div class="col-12 col-sm-6 col-lg-4">
-                            <div class="card shadow-sm">
-                                <div class="card-body">
-                                    <h5 class="card-title text-primary">Documents personnels</h5>
-                                    <p class="card-text text-muted">3 fichiers — modifie le 22 Janv 2026</p>
-                                    <a href="#" class="btn btn-outline-primary btn-sm">Ouvrir</a>
+                        <% if (list_file != null && !list_file.isEmpty()) { 
+                            for (String file : list_file) { 
+                                // Déterminer l'icône selon l'extension
+                                String icon = "bi-file-earmark";
+                                String iconColor = "text-secondary";
+                                if (file.endsWith(".pdf")) {
+                                    icon = "bi-file-earmark-pdf-fill";
+                                    iconColor = "text-danger";
+                                } else if (file.endsWith(".jpg") || file.endsWith(".png") || file.endsWith(".gif") || file.endsWith(".jpeg")) {
+                                    icon = "bi-file-earmark-image-fill";
+                                    iconColor = "text-success";
+                                } else if (file.endsWith(".doc") || file.endsWith(".docx")) {
+                                    icon = "bi-file-earmark-word-fill";
+                                    iconColor = "text-primary";
+                                } else if (file.endsWith(".xls") || file.endsWith(".xlsx")) {
+                                    icon = "bi-file-earmark-excel-fill";
+                                    iconColor = "text-success";
+                                } else if (file.endsWith(".txt")) {
+                                    icon = "bi-file-earmark-text-fill";
+                                    iconColor = "text-info";
+                                } else if (file.endsWith(".zip") || file.endsWith(".rar")) {
+                                    icon = "bi-file-earmark-zip-fill";
+                                    iconColor = "text-warning";
+                                } else if (file.endsWith(".mp3") || file.endsWith(".wav")) {
+                                    icon = "bi-file-earmark-music-fill";
+                                    iconColor = "text-purple";
+                                } else if (file.endsWith(".mp4") || file.endsWith(".avi") || file.endsWith(".mkv")) {
+                                    icon = "bi-file-earmark-play-fill";
+                                    iconColor = "text-danger";
+                                }
+                            %>
+                                <div class="col-12 col-sm-6 col-lg-4 col-xl-3">
+                                    <div class="card shadow-sm h-100">
+                                        <div class="card-body d-flex flex-column">
+                                            <!-- Icône du fichier -->
+                                            <div class="text-center mb-3">
+                                                <i class="bi <%= icon %> <%= iconColor %>" style="font-size: 3rem;"></i>
+                                            </div>
+                                            <!-- Nom du fichier -->
+                                            <h6 class="card-title text-truncate mb-3" title="<%= file %>">
+                                                <%= file %>
+                                            </h6>
+                                            <!-- Boutons d'action -->
+                                            <div class="mt-auto d-flex gap-2">
+                                                <a href="<%= request.getContextPath() %>/show/view?file=<%= file %>" 
+                                                   class="btn btn-primary btn-sm flex-grow-1">
+                                                    <i class="bi bi-eye me-1"></i>Voir
+                                                </a>
+                                                <a href="<%= request.getContextPath() %>/show/download?file=<%= file %>" 
+                                                   class="btn btn-outline-primary btn-sm">
+                                                    <i class="bi bi-download"></i>
+                                                </a>
+                                                <button type="button" class="btn btn-outline-danger btn-sm" 
+                                                        data-bs-toggle="modal" data-bs-target="#deleteModal" 
+                                                        data-filename="<%= file %>">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            <% } 
+                        } else { %>
+                            <!-- Message si aucun fichier -->
+                            <div class="col-12">
+                                <div class="text-center py-5">
+                                    <i class="bi bi-folder-x text-muted" style="font-size: 4rem;"></i>
+                                    <h5 class="mt-3 text-muted">Aucun fichier trouvé</h5>
+                                    <p class="text-muted">Commencez par uploader un fichier</p>
                                 </div>
                             </div>
-                        </div>
+                        <% } %>
+                    </div>
+                </section>
 
-                        <div class="col-12 col-sm-6 col-lg-4">
-                            <div class="card shadow-sm">
-                                <div class="card-body">
-                                    <h5 class="card-title text-primary">Photos</h5>
-                                    <p class="card-text text-muted">12 fichiers — modifie le 10 Janv 2026</p>
-                                    <a href="#" class="btn btn-outline-primary btn-sm">Ouvrir</a>
-                                </div>
+                <!-- Modal de confirmation de suppression -->
+                <div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
+                    <div class="modal-dialog modal-dialog-centered">
+                        <div class="modal-content bg-dark text-light">
+                            <div class="modal-header border-secondary">
+                                <h5 class="modal-title" id="deleteModalLabel">
+                                    <i class="bi bi-exclamation-triangle text-warning me-2"></i>Confirmer la suppression
+                                </h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fermer"></button>
                             </div>
-                        </div>
-
-                        <div class="col-12 col-sm-6 col-lg-4">
-                            <div class="card shadow-sm">
-                                <div class="card-body">
-                                    <h5 class="card-title text-primary">Projets</h5>
-                                    <p class="card-text text-muted">5 dossiers — modifie le 02 Janv 2026</p>
-                                    <a href="#" class="btn btn-outline-primary btn-sm">Ouvrir</a>
-                                </div>
+                            <div class="modal-body">
+                                <p>Êtes-vous sûr de vouloir supprimer le fichier <strong id="fileToDelete"></strong> ?</p>
+                                <p class="text-muted small">Cette action est irréversible.</p>
+                            </div>
+                            <div class="modal-footer border-secondary">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Annuler</button>
+                                <a href="#" id="confirmDeleteBtn" class="btn btn-danger">
+                                    <i class="bi bi-trash me-1"></i>Supprimer
+                                </a>
                             </div>
                         </div>
                     </div>
-                </section>
+                </div>
             </main>
         </div>
     </div>
 
     <script src="assets/bootstrap/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Gestion du modal de suppression
+        const deleteModal = document.getElementById('deleteModal');
+        if (deleteModal) {
+            deleteModal.addEventListener('show.bs.modal', function (event) {
+                const button = event.relatedTarget;
+                const filename = button.getAttribute('data-filename');
+                
+                document.getElementById('fileToDelete').textContent = filename;
+                document.getElementById('confirmDeleteBtn').href = 
+                    '<%= request.getContextPath() %>/show/delete?file=' + encodeURIComponent(filename);
+            });
+        }
+    </script>
 </body>
 </html>

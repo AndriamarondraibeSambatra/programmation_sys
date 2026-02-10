@@ -6,7 +6,7 @@ SRC_DIR="src"
 WEB_DIR="views"
 BUILD_DIR="build"
 LIB_DIR="lib"
-TOMCAT_WEBAPPS="/home/bryano-yvan/Documents/tomcat_10/webapps"
+TOMCAT_WEBAPPS="/opt/tomcat/webapps"
 SERVLET_API_JAR="$LIB_DIR/servlet-api.jar"
 
 # Nettoyage et création du répertoire temporaire
@@ -39,6 +39,9 @@ cd ..
 cp -f $BUILD_DIR/$APP_NAME.war $TOMCAT_WEBAPPS/
 
 echo ""
+echo "🔁 Redémarrage de Tomcat..."
+$STARTUP
+sleep 10
 
 echo "Déploiement terminé. Redémarrez Tomcat si nécessaire."
 
