@@ -139,12 +139,8 @@ public class ClientThread implements Runnable {
             return;
         }
 
-<<<<<<< HEAD
         String userDirPath = "../shared_storage/users/" + username + "/";
         File userDir = new File(userDirPath);
-=======
-        File userDir = new File(usersRootDir(), username);
->>>>>>> file-list-views
         if (!userDir.exists() && !userDir.mkdirs()) {
             writer.println("ERROR Cannot create user directory");
             return;
@@ -202,57 +198,8 @@ public class ClientThread implements Runnable {
         }
 
         String filename = parts[1].trim();
-<<<<<<< HEAD
         String userDirPath = "../shared_storage/users/" + username + "/";
         File file = new File(userDirPath + filename);
-=======
-        File file = new File(new File(usersRootDir(), username), filename);
-
-        if (!file.exists() || !file.isFile()) {
-            writer.println("ERROR File not found");
-            return;
-        }
-
-        long size = file.length();
-        writer.println("FILE;" + size);
-        writer.flush();
-
-        try (FileInputStream fis = new FileInputStream(file)) {
-            OutputStream os = socket.getOutputStream();
-            byte[] buffer = new byte[8192];
-            int read;
-            while ((read = fis.read(buffer)) != -1) {
-                os.write(buffer, 0, read);
-            }
-            os.flush();
-        } catch (IOException e) {
-            writer.println("ERROR Download failed");
-        }
-    }
-
-    private void handleDownloadAs(String line, PrintWriter writer) throws IOException {
-        String[] parts = line.split(";", 3);
-        if (parts.length != 3) {
-            writer.println("ERROR Invalid DOWNLOAD_AS format");
-            return;
-        }
-
-        String owner = parts[1].trim();
-        String filename = parts[2].trim();
-
-        if (owner.isEmpty() || filename.isEmpty() || filename.contains("..") || filename.contains("/") || filename.contains("\\")) {
-            writer.println("ERROR Invalid params");
-            return;
-        }
-
-        String status = ShareRequestManager.getStatus(owner, username, filename);
-        if (!"approved".equals(status)) {
-            writer.println("ERROR Access not approved");
-            return;
-        }
-
-        File file = new File(new File(usersRootDir(), owner), filename);
->>>>>>> file-list-views
 
         if (!file.exists() || !file.isFile()) {
             writer.println("ERROR File not found");
@@ -277,12 +224,8 @@ public class ClientThread implements Runnable {
     }
 
     private void handleList(PrintWriter writer) {
-<<<<<<< HEAD
         String userDirPath = "../shared_storage/users/" + username + "/";
         File dir = new File(userDirPath);
-=======
-        File dir = new File(usersRootDir(), username);
->>>>>>> file-list-views
 
         if (!dir.exists() || !dir.isDirectory()) {
             writer.println("0");
