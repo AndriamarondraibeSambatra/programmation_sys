@@ -2,46 +2,6 @@ import java.io.*;
 import java.net.Socket;
 import java.util.Scanner;
 
-<<<<<<< HEAD
-import org.json.simple.JSONObject;
-import org.json.simple.parser.JSONParser;
-
-import Service.ServeurService;
-import model.Serveur;
-import model.User;
-
-public class MainClient {
-    public static void main(String[] args) {
-        try {
-            String serverIp = "127.0.0.1";
-            int serverPort = 2100;
-
-            File cfgFile = new File("resources/config.json");
-            if (cfgFile.exists()) {
-                try (FileReader fr = new FileReader(cfgFile)) {
-                    JSONObject cfg = (JSONObject) new JSONParser().parse(fr);
-                    Object ipObj = cfg.get("server_ip");
-                    Object portObj = cfg.get("server_port");
-                    if (ipObj != null) {
-                        serverIp = ipObj.toString();
-                    }
-                    if (portObj != null) {
-                        serverPort = Integer.parseInt(portObj.toString());
-                    }
-                } catch (Exception e) {
-                    System.err.println("Failed to read resources/config.json: " + e.getMessage());
-                }
-            }
-
-            Serveur serveur = new Serveur(serverIp, serverPort);
-            serveur.connect();
-            
-            Socket socket = serveur.getSocket();
-            PrintWriter out = serveur.getOutWriter();
-            BufferedReader in = serveur.getInReader();
-            Scanner sc = new Scanner(System.in);
-            
-=======
 public class MainClient {
     public static void main(String[] args) {
         try (
@@ -50,7 +10,6 @@ public class MainClient {
             PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
             Scanner sc = new Scanner(System.in)
         ) {
->>>>>>> file-list-views
             // Login
             System.out.print("Username: ");
             String username = sc.nextLine().trim();
