@@ -1,0 +1,14 @@
+# Generated build outputs
+backend/**/out/
+backend/**/classes/
+backend/client/build/
+
+# Java compiled artifacts
+**/*.class
+
+# Temporary files created by scripts
+backend/**/sources.txt
+
+# PID files
+backend/**/tools/*.pid
+
