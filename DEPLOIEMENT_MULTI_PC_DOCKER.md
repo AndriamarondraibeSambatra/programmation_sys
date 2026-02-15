@@ -92,9 +92,9 @@ Lancement :
 
 ### 3.3 PC1 : load balancer + JavaFX + server1
 
-Sur PC1 (à la racine du projet, ou dans un dossier qui contient `backend/`), crée un fichier LB **spécial multi‑PC**.
+Sur PC1 (à la racine du projet, ou dans un dossier qui contient `backend/`), utilise le fichier LB unique.
 
-#### a) Fichier LB : `backend/loadbalancer/resources/lb_config.multi.json`
+#### a) Fichier LB : `backend/loadbalancer/resources/lb_config.json`
 
 Remplace `IP_PC1`, `IP_PC2`, `IP_PC3` par les IP LAN réelles.
 
@@ -137,7 +137,7 @@ services:
     volumes:
       - ./backend/loadbalancer/resources:/app/resources:ro
     environment:
-      SMARTDRIVE_LB_CONFIG: /app/resources/lb_config.multi.json
+      SMARTDRIVE_LB_CONFIG: /app/resources/lb_config.json
     restart: unless-stopped
 
   javafx:

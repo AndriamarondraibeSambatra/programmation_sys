@@ -17,6 +17,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 public final class BackendClient {
 
@@ -34,19 +35,22 @@ public final class BackendClient {
     public record ShareRequestEntry(String requester, String file, String status, String createdAt) {}
     public record AdminUserEntry(String username, boolean admin, boolean blocked, long quota) {}
 
+    private final Object sessionLock = new Object();
+    private Session session;
+
     public AuthResult login(String username, String password) throws Exception {
-        return withRawConnection(conn -> {
-            String resp = conn.login(username, password);
-            if (resp == null) {
-                throw new IOException("Aucune reponse du serveur");
-            }
-            if (!resp.startsWith("Welcome")) {
-                throw new IOException(resp);
-            }
-            String normalizedUser = parseWelcomeUser(resp);
-            boolean admin = parseAdminFlag(resp);
-            return new AuthResult(normalizedUser, admin, resp);
-        });
+        synchronized (sessionLock) {
+            closeSessionLocked();
+            Session opened = openSession(username, password);
+            session = opened;
+            return new AuthResult(opened.normalizedUsername, opened.admin, opened.welcomeLine);
+        }
+    }
+
+    public void logout() {
+        synchronized (sessionLock) {
+            closeSessionLocked();
+        }
     }
 
     public List<FileEntry> listFiles(String username, String password) throws Exception {
@@ -436,34 +440,84 @@ public final class BackendClient {
 
     private <T> T withAuthenticatedConnection(String username, String password, ConnectionAction<T> action)
             throws Exception {
-        return withRawConnection(conn -> {
-            String auth = conn.login(username, password);
-            if (auth == null) {
-                throw new IOException("Connexion fermee par le serveur");
+        synchronized (sessionLock) {
+            Session active = ensureSession(username, password);
+            try {
+                return action.run(active.connection);
+            } catch (IOException io) {
+                if (shouldResetSession(io)) {
+                    closeSessionLocked();
+                }
+                throw io;
             }
-            if (!auth.startsWith("Welcome")) {
-                throw new IOException(auth);
-            }
-            return action.run(conn);
-        });
+        }
     }
 
-    private <T> T withRawConnection(ConnectionAction<T> action) throws Exception {
-        Serveur serveur = null;
+    private Session ensureSession(String username, String password) throws Exception {
+        if (session == null) {
+            session = openSession(username, password);
+            return session;
+        }
+
+        if (!Objects.equals(session.username, username) || !Objects.equals(session.password, password)) {
+            closeSessionLocked();
+            session = openSession(username, password);
+        }
+        return session;
+    }
+
+    private Session openSession(String username, String password) throws Exception {
+        Serveur serveur = BackendConfig.newServeur();
         try {
-            serveur = BackendConfig.newServeur();
             serveur.connect();
             Socket socket = serveur.getSocket();
             Connection conn = new Connection(socket);
-            return action.run(conn);
-        } finally {
-            if (serveur != null) {
-                try {
-                    serveur.close();
-                } catch (Exception ignored) {
-                }
+            String resp = conn.login(username, password);
+            if (resp == null) {
+                throw new IOException("Connexion fermee par le serveur");
             }
+            if (!resp.startsWith("Welcome")) {
+                throw new IOException(resp);
+            }
+            String normalizedUser = parseWelcomeUser(resp);
+            boolean admin = parseAdminFlag(resp);
+            return new Session(serveur, conn, username, password, normalizedUser, admin, resp);
+        } catch (Exception e) {
+            try {
+                serveur.close();
+            } catch (Exception ignored) {
+            }
+            throw e;
         }
+    }
+
+    private void closeSessionLocked() {
+        if (session == null) {
+            return;
+        }
+        try {
+            session.serveur.close();
+        } catch (Exception ignored) {
+        } finally {
+            session = null;
+        }
+    }
+
+    private boolean shouldResetSession(IOException io) {
+        String message = io.getMessage();
+        if (message == null) {
+            return true;
+        }
+        String lower = message.toLowerCase();
+        if (lower.startsWith("error")) {
+            return false;
+        }
+        return lower.contains("socket")
+                || lower.contains("connection")
+                || lower.contains("connexion")
+                || lower.contains("broken pipe")
+                || lower.contains("timed out")
+                || lower.contains("flux coupe");
     }
 
     private static String parseWelcomeUser(String welcomeLine) {
@@ -527,6 +581,32 @@ public final class BackendClient {
             }
         }
         return map;
+    }
+
+    private static final class Session {
+        private final Serveur serveur;
+        private final Connection connection;
+        private final String username;
+        private final String password;
+        private final String normalizedUsername;
+        private final boolean admin;
+        private final String welcomeLine;
+
+        private Session(Serveur serveur,
+                        Connection connection,
+                        String username,
+                        String password,
+                        String normalizedUsername,
+                        boolean admin,
+                        String welcomeLine) {
+            this.serveur = serveur;
+            this.connection = connection;
+            this.username = username;
+            this.password = password;
+            this.normalizedUsername = normalizedUsername;
+            this.admin = admin;
+            this.welcomeLine = welcomeLine;
+        }
     }
 
     private static final class Connection {

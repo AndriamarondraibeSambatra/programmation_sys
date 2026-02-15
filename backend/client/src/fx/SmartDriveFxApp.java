@@ -114,6 +114,11 @@ public class SmartDriveFxApp extends Application {
         stage.show();
     }
 
+    @Override
+    public void stop() {
+        backend.logout();
+    }
+
     private Parent buildLoginRoot() {
         BorderPane root = new BorderPane();
         root.getStyleClass().add("app-bg");
@@ -1394,13 +1399,31 @@ public class SmartDriveFxApp extends Application {
             refresh.setOnAction(e -> showAdminLogs());
             header.getChildren().addAll(title, spacer, refresh);
 
-            ListView<String> list = new ListView<>(FXCollections.observableArrayList(formatAuditRows(logs)));
-            list.setPrefHeight(560);
+            List<AuditLogRow> parsed = parseAuditRows(logs);
+            List<AuditLogRow> connectionRows = new ArrayList<>();
+            List<AuditLogRow> userRows = new ArrayList<>();
+            for (AuditLogRow row : parsed) {
+                if (isConnectionAuditAction(row.action())) {
+                    connectionRows.add(row);
+                } else {
+                    userRows.add(row);
+                }
+            }
 
-            if (logs.isEmpty()) {
+            if (parsed.isEmpty()) {
                 page.getChildren().addAll(header, infoBox("Aucun log."));
             } else {
-                page.getChildren().addAll(header, list);
+                Label connTitle = new Label("Connexions (" + connectionRows.size() + ")");
+                connTitle.getStyleClass().add("card-title");
+                TableView<AuditLogRow> connTable = buildAuditTable(connectionRows);
+                connTable.setPrefHeight(240);
+
+                Label userTitle = new Label("Actions utilisateur (upload/download/delete/partage...) (" + userRows.size() + ")");
+                userTitle.getStyleClass().add("card-title");
+                TableView<AuditLogRow> userTable = buildAuditTable(userRows);
+                userTable.setPrefHeight(320);
+
+                page.getChildren().addAll(header, connTitle, connTable, userTitle, userTable);
             }
 
             setCenter(page);
@@ -1449,18 +1472,67 @@ public class SmartDriveFxApp extends Application {
 
     private List<String> formatAuditRows(List<String> logs) {
         List<String> out = new ArrayList<>();
+        for (AuditLogRow row : parseAuditRows(logs)) {
+            out.add(row.when() + " | " + row.actor() + " | " + row.action() + " | " + row.details());
+        }
+        return out;
+    }
+
+    private List<AuditLogRow> parseAuditRows(List<String> logs) {
+        List<AuditLogRow> out = new ArrayList<>();
+        if (logs == null) {
+            return out;
+        }
         for (String line : logs) {
             if (line == null || line.isBlank()) {
                 continue;
             }
             String[] p = line.split(";", 4);
             if (p.length < 4) {
-                out.add(line);
-            } else {
-                out.add(p[0] + " | " + p[1] + " | " + p[2] + " | " + p[3]);
+                out.add(new AuditLogRow("-", "-", "raw", line.trim()));
+                continue;
             }
+            String tsRaw = p[0] == null ? "" : p[0].trim();
+            long epoch = parseLong(tsRaw, -1L);
+            String when = epoch > 0 ? formatDate(epoch) : tsRaw;
+            String actor = p[1] == null || p[1].isBlank() ? "-" : p[1].trim();
+            String action = p[2] == null || p[2].isBlank() ? "-" : p[2].trim();
+            String details = p[3] == null ? "" : p[3].trim();
+            out.add(new AuditLogRow(when, actor, action, details));
         }
         return out;
+    }
+
+    private boolean isConnectionAuditAction(String action) {
+        if (action == null) {
+            return false;
+        }
+        String normalized = action.trim().toLowerCase();
+        return "login".equals(normalized) || "disconnect".equals(normalized);
+    }
+
+    private TableView<AuditLogRow> buildAuditTable(List<AuditLogRow> rows) {
+        TableView<AuditLogRow> table = new TableView<>(FXCollections.observableArrayList(rows));
+
+        TableColumn<AuditLogRow, String> whenCol = new TableColumn<>("Date");
+        whenCol.setCellValueFactory(c -> new ReadOnlyStringWrapper(c.getValue().when()));
+        whenCol.setPrefWidth(170);
+
+        TableColumn<AuditLogRow, String> actorCol = new TableColumn<>("User");
+        actorCol.setCellValueFactory(c -> new ReadOnlyStringWrapper(c.getValue().actor()));
+        actorCol.setPrefWidth(120);
+
+        TableColumn<AuditLogRow, String> actionCol = new TableColumn<>("Action");
+        actionCol.setCellValueFactory(c -> new ReadOnlyStringWrapper(c.getValue().action()));
+        actionCol.setPrefWidth(170);
+
+        TableColumn<AuditLogRow, String> detailsCol = new TableColumn<>("Details");
+        detailsCol.setCellValueFactory(c -> new ReadOnlyStringWrapper(c.getValue().details()));
+        detailsCol.setPrefWidth(620);
+
+        table.getColumns().setAll(whenCol, actorCol, actionCol, detailsCol);
+        table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+        return table;
     }
 
     private Node infoBox(String text) {
@@ -1503,6 +1575,7 @@ public class SmartDriveFxApp extends Application {
     }
 
     private void logoutToLogin() {
+        backend.logout();
         this.username = null;
         this.password = null;
         this.admin = false;
@@ -1935,6 +2008,7 @@ public class SmartDriveFxApp extends Application {
     private record AccueilData(List<String> users, List<BackendClient.NotificationEntry> notifications) {}
     private record StorageData(List<BackendClient.FileEntry> files, long quota) {}
     private record AdminDashboardData(Map<String, String> storage, Map<String, String> monitor, List<String> logs) {}
+    private record AuditLogRow(String when, String actor, String action, String details) {}
 
     private static final class ColumnConstraintsUtil {
         private ColumnConstraintsUtil() {

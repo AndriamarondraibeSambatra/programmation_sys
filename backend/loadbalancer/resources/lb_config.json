@@ -1,8 +1,10 @@
 {
   "lb_port": 2100,
   "servers": [
-    {"ip": "192.168.88.40", "port": 2122}
+    {"ip": "192.168.88.40", "port": 2121},
+    {"ip": "192.168.88.54", "port": 2122}
   ],
-  "max_clients_per_server": 1,
+  "admin_exempt_users": ["Tsoa"],
+  "max_clients_per_server": 2,
   "round_robin": true
 }

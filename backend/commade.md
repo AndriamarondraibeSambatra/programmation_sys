@@ -1,0 +1,1 @@
+ rm -f docker-down.sh compose.sh docker-up.sh 

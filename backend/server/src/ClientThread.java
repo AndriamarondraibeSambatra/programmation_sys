@@ -31,6 +31,9 @@ public class ClientThread implements Runnable {
 
     @Override
     public void run() {
+        boolean authenticated = false;
+        String remoteAddr = String.valueOf(socket.getRemoteSocketAddress());
+        String localAddr = String.valueOf(socket.getLocalSocketAddress());
         try (
             socket;  // auto-close
             InputStream rawIn = socket.getInputStream();
@@ -83,6 +86,9 @@ public class ClientThread implements Runnable {
             isAdmin = record.admin && "Tsoa".equalsIgnoreCase(username);
             writer.println("Welcome " + username + ";admin=" + isAdmin);
             System.out.println("User logged in: " + username);
+            authenticated = true;
+            AuditLogger.log(username, "login",
+                    "remote=" + remoteAddr + ", local=" + localAddr + ", admin=" + isAdmin);
 
             // ============== COMMAND LOOP ==============
             while ((line = readLine(rawIn)) != null) {
@@ -162,6 +168,11 @@ public class ClientThread implements Runnable {
 
         } catch (Exception e) {
             System.out.println("Client " + username + " error: " + e.getMessage());
+        } finally {
+            if (authenticated && username != null) {
+                AuditLogger.log(username, "disconnect",
+                        "remote=" + remoteAddr + ", local=" + localAddr);
+            }
         }
     }
 
@@ -261,6 +272,7 @@ public class ClientThread implements Runnable {
                 writer.println("OK Upload successful");
                 System.out.println("[UPLOAD] Succès : " + username + " → " + filename + " (" + size + " octets)");
                 NotificationService.broadcastNewFile(username, filename, size);
+                ReplicationService.replicateUploadAsync(username, filename, targetFile);
 
                 Long remainingQuota = fileManager.getQuota(username);
                 if (remainingQuota != null && remainingQuota > 0 && remainingQuota < (5L * 1024L * 1024L)) {

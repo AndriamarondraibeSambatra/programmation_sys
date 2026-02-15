@@ -1,5 +1,6 @@
 import java.io.*;
 import java.net.*;
+import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,6 +23,11 @@ public class LoadBalancer {
     private static boolean roundRobin = false;
     private static int lbPort = 2100;
     private static String loadedConfigPath = null;
+    private static final Set<String> exemptAdminUsers = new HashSet<>();
+
+    static {
+        exemptAdminUsers.add("tsoa");
+    }
 
     public static void main(String[] args) throws Exception {
         loadConfig();
@@ -36,41 +42,35 @@ public class LoadBalancer {
         }
 
         ServerSocket lbSocket = new ServerSocket(lbPort);
-        System.out.println("Load Balancer running on port " + lbPort + "...");
-        if (loadedConfigPath != null) {
-            System.out.println("Config loaded from " + loadedConfigPath +
-                    " | max_clients_per_server=" + maxClientsPerServer +
-                    " | servers=" + servers.size() +
-                    " | sticky_by_ip=" + stickyByIp +
-                    " | first_server_only=" + firstServerOnly +
-                    " | round_robin=" + roundRobin);
-        } else {
-            System.out.println("Config not found (using defaults) | max_clients_per_server=" + maxClientsPerServer +
-                    " | servers=" + servers.size() +
-                    " | sticky_by_ip=" + stickyByIp +
-                    " | first_server_only=" + firstServerOnly +
-                    " | round_robin=" + roundRobin);
-        }
 
         while (true) {
             Socket clientSocket = lbSocket.accept();
             String clientAddr = String.valueOf(clientSocket.getRemoteSocketAddress());
             String clientKey = extractClientIp(clientSocket);
-            ServerInfo target = allocateServer(clientKey);
-            if (target == null) {
+            InitialClientData init;
+            try {
+                init = readInitialClientData(clientSocket);
+            } catch (Exception e) {
+                PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true);
+                out.println("ERROR Invalid login preamble");
+                System.out.println("Refus client " + clientAddr + " (ip=" + clientKey + ") | Invalid login preamble: " + e.getMessage());
+                try { clientSocket.close(); } catch (Exception ignored) {}
+                continue;
+            }
+            Allocation allocation = allocateServer(clientKey, init.adminExempt);
+            if (allocation == null || allocation.server == null) {
                 PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true);
                 out.println("All servers busy. Try later.");
                 System.out.println("Refus client " + clientAddr + " (ip=" + clientKey + ") | All servers busy.");
                 clientSocket.close();
                 continue;
             }
+            ServerInfo target = allocation.server;
             int connectedNow;
             synchronized (serverClientsLock) {
                 connectedNow = serverClients.getOrDefault(target, 0);
             }
-            System.out.println("Client " + clientAddr + " -> " + target.ip + ":" + target.port +
-                    " | Clients connectés: " + connectedNow);
-            new Thread(new ClientForwarder(clientSocket, clientAddr, clientKey, target)).start();
+            new Thread(new ClientForwarder(clientSocket, clientAddr, clientKey, target, allocation.counted, init)).start();
         }
     }
 
@@ -86,17 +86,20 @@ public class LoadBalancer {
         return null;
     }
 
-    private static ServerInfo allocateServer(String clientKey) {
-        return allocateServer(clientKey, Collections.emptySet());
+    private static Allocation allocateServer(String clientKey, boolean adminExempt) {
+        return allocateServer(clientKey, Collections.emptySet(), adminExempt);
     }
 
-    private static ServerInfo allocateServer(String clientKey, Set<ServerInfo> exclude) {
+    private static Allocation allocateServer(String clientKey, Set<ServerInfo> exclude, boolean adminExempt) {
         synchronized (serverClientsLock) {
             if (firstServerOnly) {
                 if (servers.isEmpty()) return null;
                 ServerInfo preferred = servers.get(0);
                 if (exclude != null && exclude.contains(preferred)) {
                     return null;
+                }
+                if (adminExempt) {
+                    return new Allocation(preferred, false);
                 }
                 int count = serverClients.getOrDefault(preferred, 0);
                 if (count >= maxClientsPerServer) {
@@ -107,13 +110,13 @@ public class LoadBalancer {
                     clientAffinity.put(clientKey, preferred);
                     clientActiveConnections.put(clientKey, clientActiveConnections.getOrDefault(clientKey, 0) + 1);
                 }
-                return preferred;
+                return new Allocation(preferred, true);
             }
 
             int n = servers.size();
             if (n == 0) return null;
 
-            if (stickyByIp && clientKey != null) {
+            if (!adminExempt && stickyByIp && clientKey != null) {
                 ServerInfo pinned = clientAffinity.get(clientKey);
                 if (pinned != null) {
                     if (exclude == null || !exclude.contains(pinned)) {
@@ -121,7 +124,7 @@ public class LoadBalancer {
                     if (count < maxClientsPerServer) {
                         serverClients.put(pinned, count + 1);
                         clientActiveConnections.put(clientKey, clientActiveConnections.getOrDefault(clientKey, 0) + 1);
-                        return pinned;
+                        return new Allocation(pinned, true);
                     }
                     }
                 }
@@ -137,6 +140,12 @@ public class LoadBalancer {
                 if (exclude != null && exclude.contains(s)) {
                     continue;
                 }
+                if (adminExempt) {
+                    if (roundRobin) {
+                        rrIndex = (idx + 1) % n;
+                    }
+                    return new Allocation(s, false);
+                }
                 int count = serverClients.getOrDefault(s, 0);
                 if (count < maxClientsPerServer) {
                     serverClients.put(s, count + 1);
@@ -147,15 +156,18 @@ public class LoadBalancer {
                         clientAffinity.put(clientKey, s);
                         clientActiveConnections.put(clientKey, clientActiveConnections.getOrDefault(clientKey, 0) + 1);
                     }
-                    return s;
+                    return new Allocation(s, true);
                 }
             }
             return null;
         }
     }
 
-    private static int releaseServer(ServerInfo server, String clientKey) {
+    private static int releaseServer(ServerInfo server, String clientKey, boolean counted) {
         synchronized (serverClientsLock) {
+            if (!counted) {
+                return serverClients.getOrDefault(server, 0);
+            }
             int prev = serverClients.getOrDefault(server, 0);
             int next = Math.max(0, prev - 1);
             serverClients.put(server, next);
@@ -232,6 +244,22 @@ public class LoadBalancer {
                 roundRobin = Boolean.parseBoolean(rrObj.toString());
             }
 
+            Object exemptObj = cfg.get("admin_exempt_users");
+            if (exemptObj instanceof JSONArray) {
+                exemptAdminUsers.clear();
+                JSONArray arr = (JSONArray) exemptObj;
+                for (Object o : arr) {
+                    if (o == null) continue;
+                    String user = o.toString().trim().toLowerCase(Locale.ROOT);
+                    if (!user.isEmpty()) {
+                        exemptAdminUsers.add(user);
+                    }
+                }
+                if (exemptAdminUsers.isEmpty()) {
+                    exemptAdminUsers.add("tsoa");
+                }
+            }
+
             Object serversObj = cfg.get("servers");
             if (serversObj instanceof JSONArray) {
                 servers.clear();
@@ -280,27 +308,105 @@ public class LoadBalancer {
         }
     }
 
+    static class Allocation {
+        ServerInfo server;
+        boolean counted;
+
+        Allocation(ServerInfo server, boolean counted) {
+            this.server = server;
+            this.counted = counted;
+        }
+    }
+
+    static class InitialClientData {
+        byte[] firstLineBytes;
+        String loginLine;
+        String username;
+        boolean adminExempt;
+
+        InitialClientData(byte[] firstLineBytes, String loginLine, String username, boolean adminExempt) {
+            this.firstLineBytes = firstLineBytes;
+            this.loginLine = loginLine;
+            this.username = username;
+            this.adminExempt = adminExempt;
+        }
+    }
+
+    private static InitialClientData readInitialClientData(Socket clientSocket) throws IOException {
+        int prevTimeout = 0;
+        try {
+            prevTimeout = clientSocket.getSoTimeout();
+        } catch (Exception ignored) {}
+        clientSocket.setSoTimeout(10_000);
+        try {
+            InputStream in = clientSocket.getInputStream();
+            ByteArrayOutputStream lineBuf = new ByteArrayOutputStream(128);
+            int b;
+            while ((b = in.read()) != -1) {
+                if (b == '\n') break;
+                if (b == '\r') continue;
+                if (lineBuf.size() > 8192) {
+                    throw new IOException("LOGIN line too long");
+                }
+                lineBuf.write(b);
+            }
+            if (lineBuf.size() == 0 && b == -1) {
+                throw new IOException("Client closed before LOGIN");
+            }
+            String loginLine = lineBuf.toString(StandardCharsets.UTF_8);
+            byte[] firstLineBytes = (loginLine + "\n").getBytes(StandardCharsets.UTF_8);
+            String username = parseLoginUsername(loginLine);
+            boolean exempt = isAdminExemptUser(username);
+            return new InitialClientData(firstLineBytes, loginLine, username, exempt);
+        } finally {
+            try {
+                clientSocket.setSoTimeout(prevTimeout);
+            } catch (Exception ignored) {}
+        }
+    }
+
+    private static String parseLoginUsername(String line) {
+        if (line == null) return null;
+        if (!line.startsWith("LOGIN;")) return null;
+        String[] parts = line.split(";", 3);
+        if (parts.length < 2) return null;
+        String username = parts[1].trim();
+        return username.isEmpty() ? null : username;
+    }
+
+    private static boolean isAdminExemptUser(String username) {
+        if (username == null || username.isBlank()) {
+            return false;
+        }
+        return exemptAdminUsers.contains(username.trim().toLowerCase(Locale.ROOT));
+    }
+
     static class ClientForwarder implements Runnable {
         Socket clientSocket;
         String clientAddr;
         String clientKey;
         ServerInfo server;
+        boolean counted;
+        InitialClientData init;
 
-        ClientForwarder(Socket c, String clientAddr, String clientKey, ServerInfo s) {
+        ClientForwarder(Socket c, String clientAddr, String clientKey, ServerInfo s, boolean counted, InitialClientData init) {
             clientSocket = c;
             this.clientAddr = clientAddr;
             this.clientKey = clientKey;
             server = s;
+            this.counted = counted;
+            this.init = init;
         }
 
         @Override
         public void run() {
             Set<ServerInfo> tried = new HashSet<>();
             ServerInfo current = server;
+            boolean currentCounted = counted;
             while (true) {
                 if (current == null) {
-                    current = allocateServer(clientKey, tried);
-                    if (current == null) {
+                    Allocation a = allocateServer(clientKey, tried, init != null && init.adminExempt);
+                    if (a == null || a.server == null) {
                         try {
                             PrintWriter out = new PrintWriter(clientSocket.getOutputStream(), true);
                             out.println("All servers busy or unreachable. Try later.");
@@ -310,6 +416,8 @@ public class LoadBalancer {
                         } catch (Exception ignored) {}
                         return;
                     }
+                    current = a.server;
+                    currentCounted = a.counted;
                 }
 
                 System.out.println("Tentative de connexion vers " + current.ip + ":" + current.port);
@@ -319,12 +427,18 @@ public class LoadBalancer {
                 } catch (Exception e) {
                     System.err.println("Échec de connexion vers " + current.ip + ":" + current.port + " (" + e.getMessage() + ")");
                     tried.add(current);
-                    releaseServer(current, clientKey);
+                    releaseServer(current, clientKey, currentCounted);
                     current = null;
                     continue;
                 }
 
                 try (serverSocket) {
+                    if (init != null && init.firstLineBytes != null) {
+                        OutputStream serverOut = serverSocket.getOutputStream();
+                        serverOut.write(init.firstLineBytes);
+                        serverOut.flush();
+                        init.firstLineBytes = null;
+                    }
                     final Socket sSocket = serverSocket;
                     Thread t1 = new Thread(() -> forwardData(clientSocket, sSocket));
                     Thread t2 = new Thread(() -> forwardData(sSocket, clientSocket));
@@ -335,9 +449,10 @@ public class LoadBalancer {
                 } catch (Exception e) {
                     e.printStackTrace();
                 } finally {
-                    int remaining = releaseServer(current, clientKey);
+                    int remaining = releaseServer(current, clientKey, currentCounted);
                     System.out.println("Client " + clientAddr + " déconnecté de " + current.ip + ":" + current.port +
-                            " | Clients restants: " + remaining);
+                            " | Clients restants: " + remaining +
+                            " | exempt_admin=" + (init != null && init.adminExempt));
                     try {
                         if (clientSocket != null) clientSocket.close();
                     } catch (Exception ignored) {}

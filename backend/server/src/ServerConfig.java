@@ -40,7 +40,39 @@ public class ServerConfig {
         } catch (Exception e) {
             System.out.println("[Config] Using defaults (" + path + " not found or invalid)");
         }
+        cfg.applyEnvironmentOverrides();
         return cfg;
+    }
+
+    private void applyEnvironmentOverrides() {
+        String envStorage = envOrNull("SMARTDRIVE_STORAGE_ROOT");
+        if (envStorage != null) storageRoot = envStorage;
+
+        String envSlaveHost = envOrNull("SMARTDRIVE_SLAVE_HOST");
+        if (envSlaveHost != null) slaveHost = envSlaveHost;
+
+        Integer envSlavePort = envIntOrNull("SMARTDRIVE_SLAVE_PORT");
+        if (envSlavePort != null && envSlavePort > 0) slavePort = envSlavePort;
+
+        String envSlaveStorage = envOrNull("SMARTDRIVE_SLAVE_STORAGE_ROOT");
+        if (envSlaveStorage != null) slaveStorageRoot = envSlaveStorage;
+    }
+
+    private static String envOrNull(String key) {
+        String v = System.getenv(key);
+        if (v == null) return null;
+        String out = v.trim();
+        return out.isEmpty() ? null : out;
+    }
+
+    private static Integer envIntOrNull(String key) {
+        String v = envOrNull(key);
+        if (v == null) return null;
+        try {
+            return Integer.parseInt(v);
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     public String getStorageRoot() {

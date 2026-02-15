@@ -5,6 +5,9 @@ services:
     build:
       context: ./backend/server
     command: ["2121"]
+    environment:
+      SMARTDRIVE_SLAVE_HOST: slave
+      SMARTDRIVE_SLAVE_PORT: "2322"
     ports:
       - "2121:2121"
       - "2221:2221"
@@ -17,6 +20,9 @@ services:
     build:
       context: ./backend/server
     command: ["2122"]
+    environment:
+      SMARTDRIVE_SLAVE_HOST: slave
+      SMARTDRIVE_SLAVE_PORT: "2322"
     ports:
       - "2122:2122"
       - "2222:2222"
@@ -29,6 +35,9 @@ services:
     build:
       context: ./backend/server
     command: ["2123"]
+    environment:
+      SMARTDRIVE_SLAVE_HOST: slave
+      SMARTDRIVE_SLAVE_PORT: "2322"
     ports:
       - "2123:2123"
       - "2223:2223"
@@ -45,7 +54,7 @@ services:
     volumes:
       - ./backend/loadbalancer/resources:/app/resources:ro
     environment:
-      SMARTDRIVE_LB_CONFIG: /app/resources/lb_config.docker.json
+      SMARTDRIVE_LB_CONFIG: /app/resources/lb_config.json
     depends_on:
       - server1
       - server2
@@ -72,4 +81,17 @@ services:
       - ${HOME:-/tmp}:/host-home
     stdin_open: true
     tty: true
+    restart: unless-stopped
+
+  # Si ce PC doit etre SLAVE, laisser ce bloc actif.
+  # Si ce PC ne doit pas etre SLAVE, commenter ce bloc.
+  slave:
+    build:
+      context: ./backend/server
+    entrypoint: ["java", "-cp", "out:lib/json-simple-1.1.1.jar", "SlaveServer"]
+    ports:
+      - "2322:2322"
+    volumes:
+      - ./backend/server/resources:/app/resources:ro
+      - ./backend/server/slave_storage:/app/slave_storage
     restart: unless-stopped
